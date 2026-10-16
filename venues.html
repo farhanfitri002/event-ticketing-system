@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Venues · Event Ticketing Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireAuth();
+    requireRole('admin');
+
+    document.getElementById('app').innerHTML = renderSidebar('venues') + `
+      <main class="main-content">
+        <header class="page-header">
+          <h1>Venues</h1>
+          <button class="btn-primary" onclick="openCreate()">+ New Venue</button>
+        </header>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Venue Name</th><th>Location</th>
+              <th>Capacity</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="venuesBody">
+            <tr><td colspan="6" class="center">Loading venues...</td></tr>
+          </tbody>
+        </table>
+      </main>
+    `;
+
+    async function loadVenues() {
+      try {
+        const res = await api.getVenues();
+        const venues = res.data || [];
+        const tbody = document.getElementById('venuesBody');
+        if (!venues.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="center muted">No venues yet.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = venues.map(v => `
+          <tr>
+            <td>#${v.venue_id}</td>
+            <td><strong>${v.venue_name}</strong></td>
+            <td>${v.location}</td>
+            <td>${v.capacity} people</td>
+            <td><span class="badge ${v.status}">${v.status}</span></td>
+            <td>
+              <button class="btn-sm" onclick='editVenue(${JSON.stringify(v)})'>Edit</button>
+              <button class="btn-sm btn-danger" onclick="deleteVenue(${v.venue_id})">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        document.getElementById('venuesBody').innerHTML =
+          `<tr><td colspan="6" class="center" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    function openCreate() {
+      const name = prompt('Venue Name:');
+      if (!name) return;
+      const location = prompt('Location:');
+      if (!location) return;
+      const capacity = parseInt(prompt('Capacity (number of people):'));
+      if (!capacity || capacity <= 0) { alert('Invalid capacity'); return; }
+      createVenue({ venue_name: name.trim(), location: location.trim(), capacity, status: 'available' });
+    }
+
+    async function createVenue(data) {
+      try {
+        await api.createVenue(data);
+        alert('Venue created!');
+        loadVenues();
+      } catch (err) {
+        alert('Failed: ' + err.message);
+      }
+    }
+
+    function editVenue(v) {
+      const name = prompt('Venue Name:', v.venue_name);
+      if (!name) return;
+      const location = prompt('Location:', v.location);
+      if (!location) return;
+      const capacity = parseInt(prompt('Capacity:', v.capacity));
+      if (!capacity || capacity <= 0) { alert('Invalid capacity'); return; }
+      const status = prompt('Status (available/unavailable):', v.status);
+      updateVenue(v.venue_id, {
+        venue_name: name.trim(),
+        location: location.trim(),
+        capacity,
+        status
+      });
+    }
+
+    async function updateVenue(id, data) {
+      try {
+        await api.updateVenue(id, data);
+        alert('Venue updated!');
+        loadVenues();
+      } catch (err) {
+        alert('Failed: ' + err.message);
+      }
+    }
+
+    async function deleteVenue(id) {
+      if (!confirm('Delete this venue?')) return;
+      try {
+        await api.deleteVenue(id);
+        alert('Venue deleted.');
+        loadVenues();
+      } catch (err) {
+        alert('Failed: ' + err.message);
+      }
+    }
+
+    loadVenues();
+  </script>
+</body>
+</html>

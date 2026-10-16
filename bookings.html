@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Bookings · Event Ticketing Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireAuth();
+    const user = getUser();
+
+    document.getElementById('app').innerHTML = renderSidebar('bookings') + `
+      <main class="main-content">
+        <header class="page-header">
+          <h1>Bookings</h1>
+          <div class="muted">${user.role === 'customer' ? 'Your bookings' : 'All bookings'}</div>
+        </header>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Customer</th><th>Event</th>
+              <th>Qty</th><th>Total</th><th>Date</th>
+              <th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="bookingsBody">
+            <tr><td colspan="8" class="center">Loading bookings...</td></tr>
+          </tbody>
+        </table>
+      </main>
+    `;
+
+    async function loadBookings() {
+      try {
+        const res = await api.getBookings();
+        const bookings = res.data || [];
+        const tbody = document.getElementById('bookingsBody');
+
+        if (!bookings.length) {
+          tbody.innerHTML = `<tr><td colspan="8" class="center muted">No bookings found.</td></tr>`;
+          return;
+        }
+
+        const canManage = ['admin', 'staff'].includes(user.role);
+        const canCancel = user.role === 'customer' || user.role === 'admin';
+
+        tbody.innerHTML = bookings.map(b => `
+          <tr>
+            <td>#${b.booking_id}</td>
+            <td>${b.customer_name || '—'}</td>
+            <td>${b.event_name || '—'}<br><span class="muted">${b.event_date || ''}</span></td>
+            <td>${b.quantity}</td>
+            <td>RM ${Number(b.total_amount).toFixed(2)}</td>
+            <td>${(b.booking_date || '').substring(0,10)}</td>
+            <td><span class="badge ${b.booking_status}">${b.booking_status}</span></td>
+            <td>
+              ${canManage && b.booking_status !== 'confirmed'
+                ? `<button class="btn-sm btn-success" onclick="confirmBooking(${b.booking_id})">Confirm</button>` : ''}
+              ${canCancel && b.booking_status !== 'cancelled'
+                ? `<button class="btn-sm btn-danger" onclick="cancelBooking(${b.booking_id})">Cancel</button>` : ''}
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        document.getElementById('bookingsBody').innerHTML =
+          `<tr><td colspan="8" class="center" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    async function confirmBooking(id) {
+      try {
+        await api.updateBooking(id, { booking_status: 'confirmed' });
+        loadBookings();
+      } catch (err) {
+        alert('Failed: ' + err.message);
+      }
+    }
+
+    async function cancelBooking(id) {
+      if (!confirm('Cancel this booking?')) return;
+      try {
+        await api.deleteBooking(id);
+        loadBookings();
+      } catch (err) {
+        alert('Failed: ' + err.message);
+      }
+    }
+
+    loadBookings();
+  </script>
+</body>
+</html>

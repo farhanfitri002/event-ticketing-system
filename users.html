@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Users · Event Ticketing Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireAuth();
+    requireRole('admin');
+
+    document.getElementById('app').innerHTML = renderSidebar('users') + `
+      <main class="main-content">
+        <header class="page-header">
+          <h1>Users</h1>
+          <button class="btn-primary" onclick="openCreate()">+ New User</button>
+        </header>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th><th>Name</th><th>Email</th>
+              <th>Phone</th><th>Role</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="usersBody">
+            <tr><td colspan="7" class="center">Loading users...</td></tr>
+          </tbody>
+        </table>
+      </main>
+    `;
+
+    async function loadUsers() {
+      try {
+        const res = await api.getUsers();
+        const users = res.data || [];
+        const tbody = document.getElementById('usersBody');
+        tbody.innerHTML = users.map(u => `
+          <tr>
+            <td>#${u.user_id}</td>
+            <td><strong>${u.name}</strong></td>
+            <td>${u.email}</td>
+            <td>${u.phone || '—'}</td>
+            <td><span class="badge ${u.role}">${u.role}</span></td>
+            <td><span class="badge ${u.status}">${u.status}</span></td>
+            <td>
+              <button class="btn-sm" onclick='editUser(${JSON.stringify(u)})'>Edit</button>
+              ${u.status === 'active'
+                ? `<button class="btn-sm btn-danger" onclick="deactivateUser(${u.user_id})">Deactivate</button>` : ''}
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        document.getElementById('usersBody').innerHTML =
+          `<tr><td colspan="7" class="center" style="color:var(--danger)">${err.message}</td></tr>`;
+      }
+    }
+
+    async function openCreate() {
+      const name = prompt('Full name:'); if (!name) return;
+      const email = prompt('Email:'); if (!email) return;
+      const password = prompt('Password (min 6 chars):'); if (!password || password.length < 6) { alert('Password too short'); return; }
+      const phone = prompt('Phone (optional):') || null;
+      const role = prompt('Role (admin/staff/customer):', 'customer');
+      if (!['admin','staff','customer'].includes(role)) { alert('Invalid role'); return; }
+
+      try {
+        await api.createUser({ name, email, password, phone, role, status: 'active' });
+        alert('User created!');
+        loadUsers();
+      } catch (err) { alert('Failed: ' + err.message); }
+    }
+
+    function editUser(u) {
+      const name = prompt('Name:', u.name); if (!name) return;
+      const email = prompt('Email:', u.email); if (!email) return;
+      const phone = prompt('Phone:', u.phone || '');
+      const role = prompt('Role (admin/staff/customer):', u.role);
+      const status = prompt('Status (active/inactive):', u.status);
+      const password = prompt('New password (leave blank to keep current):', '');
+      const payload = { name, email, phone, role, status };
+      if (password) payload.password = password;
+      updateUser(u.user_id, payload);
+    }
+
+    async function updateUser(id, data) {
+      try {
+        await api.updateUser(id, data);
+        alert('User updated!');
+        loadUsers();
+      } catch (err) { alert('Failed: ' + err.message); }
+    }
+
+    async function deactivateUser(id) {
+      if (!confirm('Deactivate this user?')) return;
+      try {
+        await api.deleteUser(id);
+        loadUsers();
+      } catch (err) { alert('Failed: ' + err.message); }
+    }
+
+    loadUsers();
+  </script>
+</body>
+</html>
