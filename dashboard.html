@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard · Event Ticketing Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireAuth();
+    const user = getUser();
+
+    document.getElementById('app').innerHTML = renderSidebar('dashboard') + `
+      <main class="main-content">
+        <header class="page-header">
+          <h1>Dashboard</h1>
+          <div class="muted">Welcome back, <strong>${user.name}</strong></div>
+        </header>
+
+        <section class="stats-grid" id="statsGrid">
+          <div class="stat-card"><h3>Loading...</h3><p>—</p></div>
+        </section>
+
+        <section>
+          <h2 style="margin-bottom:1rem;font-size:1.15rem;">Quick Actions</h2>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <a href="events.html" class="btn-primary">View Events</a>
+            <a href="bookings.html" class="btn-primary" style="background:var(--accent);">View Bookings</a>
+          </div>
+        </section>
+      </main>
+    `;
+
+    async function loadStats() {
+      const grid = document.getElementById('statsGrid');
+
+      try {
+        const events = await api.getEvents('?limit=50');
+        const eventCount = (events.data || []).length;
+
+        if (user.role === 'admin') {
+          grid.innerHTML = `
+            <div class="stat-card"><h3>Total Events</h3><p id="s1">—</p></div>
+            <div class="stat-card"><h3>Total Venues</h3><p id="s2">—</p></div>
+            <div class="stat-card"><h3>Total Bookings</h3><p id="s3">—</p></div>
+            <div class="stat-card"><h3>Registered Users</h3><p id="s4">—</p></div>
+          `;
+          document.getElementById('s1').textContent = eventCount;
+
+          const venues = await api.getVenues();
+          document.getElementById('s2').textContent = (venues.data || []).length;
+
+          const bookings = await api.getBookings();
+          document.getElementById('s3').textContent = (bookings.data || []).length;
+
+          const users = await api.getUsers();
+          document.getElementById('s4').textContent = (users.data || []).length;
+
+        } else if (user.role === 'staff') {
+          const bookings = await api.getBookings();
+          grid.innerHTML = `
+            <div class="stat-card"><h3>Total Events</h3><p>${eventCount}</p></div>
+            <div class="stat-card"><h3>Bookings for My Events</h3><p>${(bookings.data || []).length}</p></div>
+          `;
+
+        } else {
+          const bookings = await api.getBookings();
+          grid.innerHTML = `
+            <div class="stat-card"><h3>Upcoming Events</h3><p>${eventCount}</p></div>
+            <div class="stat-card"><h3>My Bookings</h3><p>${(bookings.data || []).length}</p></div>
+          `;
+        }
+      } catch (err) {
+        grid.innerHTML = `<div class="stat-card"><h3>Error</h3><p>${err.message}</p></div>`;
+        console.error('Stats load error:', err);
+      }
+    }
+
+    loadStats();
+  </script>
+</body>
+</html>
