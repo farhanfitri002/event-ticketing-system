@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Events · Event Ticketing Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireAuth();
+    const user = getUser();
+    const canManage = ['admin', 'staff'].includes(user.role);
+
+    document.getElementById('app').innerHTML = renderSidebar('events') + `
+      <main class="main-content">
+        <header class="page-header">
+          <h1>Events</h1>
+          ${canManage ? `<a href="event-form.html" class="btn-primary">+ New Event</a>` : ''}
+        </header>
+
+        <div class="toolbar">
+          <input type="text" id="searchInput" placeholder="🔍 Search by name, venue, or location...">
+          <select id="statusFilter">
+            <option value="">All Statuses</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <select id="sortSelect">
+            <option value="date_asc">Date ↑</option>
+            <option value="date_desc">Date ↓</option>
+            <option value="price_asc">Price ↑</option>
+            <option value="price_desc">Price ↓</option>
+          </select>
+        </div>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Event Name</th>
+              <th>Date</th>
+              <th>Venue</th>
+              <th>Price</th>
+              <th>Available</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="eventsTableBody">
+            <tr><td colspan="8" class="center">Loading events...</td></tr>
+          </tbody>
+        </table>
+      </main>
+    `;
+
+    let allEvents = [];
+
+    async function loadEvents() {
+      try {
+        const res = await api.getEvents('?limit=50');
+        allEvents = res.data || [];
+        applyFilters();
+      } catch (err) {
+        document.getElementById('eventsTableBody').innerHTML =
+          `<tr><td colspan="8" class="center" style="color:var(--danger)">Failed to load events: ${err.message}</td></tr>`;
+      }
+    }
+
+    function applyFilters() {
+      const search = document.getElementById('searchInput').value.trim().toLowerCase();
+      const status = document.getElementById('statusFilter').value;
+      const sort = document.getElementById('sortSelect').value;
+
+      let events = allEvents.filter(ev => {
+        const matchesSearch = !search ||
+          ev.event_name.toLowerCase().includes(search) ||
+          (ev.venue_name || '').toLowerCase().includes(search) ||
+          (ev.venue_location || '').toLowerCase().includes(search);
+        const matchesStatus = !status || ev.status === status;
+        return matchesSearch && matchesStatus;
+      });
+
+      events.sort((a, b) => {
+        switch (sort) {
+          case 'date_desc':  return new Date(b.event_date) - new Date(a.event_date);
+          case 'price_asc':  return Number(a.ticket_price) - Number(b.ticket_price);
+          case 'price_desc': return Number(b.ticket_price) - Number(a.ticket_price);
+          default:           return new Date(a.event_date) - new Date(b.event_date);
+        }
+      });
+
+      renderEvents(events);
+    }
+
+    function renderEvents(events) {
+      const tbody = document.getElementById('eventsTableBody');
+      if (events.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="center muted">No events match your filters.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = events.map(ev => `
+        <tr>
+          <td>#${ev.event_id}</td>
+          <td><strong>${ev.event_name}</strong><br><span class="muted">${(ev.description || '').substring(0, 60)}${ev.description && ev.description.length > 60 ? '...' : ''}</span></td>
+          <td>${ev.event_date}<br><span class="muted">${ev.start_time} - ${ev.end_time}</span></td>
+          <td>${ev.venue_name || '—'}<br><span class="muted">${ev.venue_location || ''}</span></td>
+          <td><strong>RM ${Number(ev.ticket_price).toFixed(2)}</strong></td>
+          <td>${ev.available_tickets} / ${ev.total_tickets}</td>
+          <td><span class="badge ${ev.status}">${ev.status}</span></td>
+          <td>
+            <button class="btn-sm" style="background:var(--accent)" onclick="viewWeather(${ev.event_id})">Weather</button>
+            ${canManage ? `
+              <button class="btn-sm" onclick="editEvent(${ev.event_id})">Edit</button>
+              <button class="btn-sm btn-danger" onclick="cancelEvent(${ev.event_id})">Cancel</button>
+            ` : ''}
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function editEvent(id) {
+      window.location.href = 'event-form.html?id=' + id;
+    }
+
+    async function cancelEvent(id) {
+      if (!confirm('Are you sure you want to cancel this event?')) return;
+      try {
+        await api.deleteEvent(id);
+        alert('Event cancelled successfully.');
+        loadEvents();
+      } catch (err) {
+        alert('Failed to cancel: ' + err.message);
+      }
+    }
+
+    async function viewWeather(id) {
+      try {
+        const res = await api.getWeather(id);
+        const w = res.weather;
+        const v = res.venue;
+        alert(
+          `Weather at ${v.venue_name} (${v.location})\n\n` +
+          `Condition: ${w.condition}\n` +
+          `Temperature: ${w.temperature}${w.temperature_unit}\n` +
+          `Feels like: ${w.feels_like}${w.temperature_unit}\n` +
+          `Humidity: ${w.humidity}${w.humidity_unit}\n` +
+          `Wind: ${w.wind_speed} ${w.wind_speed_unit}`
+        );
+      } catch (err) {
+        alert('Weather lookup failed: ' + err.message);
+      }
+    }
+
+    document.getElementById('searchInput').addEventListener('input', applyFilters);
+    document.getElementById('statusFilter').addEventListener('change', applyFilters);
+    document.getElementById('sortSelect').addEventListener('change', applyFilters);
+
+    loadEvents();
+  </script>
+</body>
+</html>
