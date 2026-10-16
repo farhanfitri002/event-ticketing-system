@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Event Form · Event Ticketing Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app" id="app"></div>
+
+  <script src="js/api.js"></script>
+  <script>
+    requireAuth();
+    requireRole('admin', 'staff');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const eventId = urlParams.get('id');
+    const isEdit = !!eventId;
+
+    document.getElementById('app').innerHTML = renderSidebar('events') + `
+      <main class="main-content">
+        <header class="page-header">
+          <h1 id="pageTitle">${isEdit ? 'Edit Event' : 'Create Event'}</h1>
+          <a href="events.html" class="btn-secondary">← Back</a>
+        </header>
+
+        <form id="eventForm" class="form-card">
+          <div class="form-group">
+            <label>Event Name *</label>
+            <input type="text" id="event_name" required maxlength="150" placeholder="e.g. Tech Conference 2026">
+          </div>
+
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="description" rows="3" placeholder="Short description of the event..."></textarea>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Organiser *</label>
+              <select id="organiser_id" required></select>
+            </div>
+            <div class="form-group">
+              <label>Venue *</label>
+              <select id="venue_id" required></select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Event Date *</label>
+              <input type="date" id="event_date" required>
+            </div>
+            <div class="form-group">
+              <label>Status *</label>
+              <select id="status" required>
+                <option value="upcoming">Upcoming</option>
+                <option value="ongoing">Ongoing</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Start Time *</label>
+              <input type="time" id="start_time" required>
+            </div>
+            <div class="form-group">
+              <label>End Time *</label>
+              <input type="time" id="end_time" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Ticket Price (RM) *</label>
+              <input type="number" id="ticket_price" min="0" step="0.01" required placeholder="50.00">
+            </div>
+            <div class="form-group">
+              <label>Total Tickets *</label>
+              <input type="number" id="total_tickets" min="1" required placeholder="100">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Available Tickets *</label>
+              <input type="number" id="available_tickets" min="0" required>
+            </div>
+          </div>
+
+          <p id="formError" class="error-msg hidden"></p>
+
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" id="submitBtn">${isEdit ? 'Save Changes' : 'Create Event'}</button>
+            <a href="events.html" class="btn-secondary">Cancel</a>
+          </div>
+        </form>
+      </main>
+    `;
+
+    document.getElementById('total_tickets').addEventListener('input', (e) => {
+      if (!isEdit) document.getElementById('available_tickets').value = e.target.value;
+    });
+
+    async function loadDropdowns() {
+      try {
+        const usersRes = await api.getUsers();
+        const organisers = (usersRes.data || []).filter(u =>
+          ['admin', 'staff'].includes(u.role) && u.status === 'active'
+        );
+        document.getElementById('organiser_id').innerHTML =
+          organisers.map(u => `<option value="${u.user_id}">${u.name} (${u.role})</option>`).join('');
+
+        const venuesRes = await api.getVenues();
+        const venues = (venuesRes.data || []).filter(v => v.status === 'available');
+        document.getElementById('venue_id').innerHTML = venues.length
+          ? venues.map(v => `<option value="${v.venue_id}">${v.venue_name} — ${v.location}</option>`).join('')
+          : '<option value="">No available venues</option>';
+      } catch (err) {
+        showError('Failed to load dropdowns: ' + err.message);
+      }
+    }
+
+    async function loadEvent() {
+      try {
+        const res = await api.getEvent(eventId);
+        const ev = res.data;
+        document.getElementById('event_name').value = ev.event_name || '';
+        document.getElementById('description').value = ev.description || '';
+        document.getElementById('organiser_id').value = ev.organiser_id;
+        document.getElementById('venue_id').value = ev.venue_id;
+        document.getElementById('event_date').value = ev.event_date;
+        document.getElementById('start_time').value = (ev.start_time || '').substring(0, 5);
+        document.getElementById('end_time').value = (ev.end_time || '').substring(0, 5);
+        document.getElementById('ticket_price').value = ev.ticket_price;
+        document.getElementById('total_tickets').value = ev.total_tickets;
+        document.getElementById('available_tickets').value = ev.available_tickets;
+        document.getElementById('status').value = ev.status;
+      } catch (err) {
+        showError('Failed to load event: ' + err.message);
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('formError');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    document.getElementById('eventForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+
+      const payload = {
+        organiser_id: parseInt(document.getElementById('organiser_id').value),
+        venue_id: parseInt(document.getElementById('venue_id').value),
+        event_name: document.getElementById('event_name').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        event_date: document.getElementById('event_date').value,
+        start_time: document.getElementById('start_time').value + ':00',
+        end_time: document.getElementById('end_time').value + ':00',
+        ticket_price: parseFloat(document.getElementById('ticket_price').value),
+        total_tickets: parseInt(document.getElementById('total_tickets').value),
+        available_tickets: parseInt(document.getElementById('available_tickets').value),
+        status: document.getElementById('status').value
+      };
+
+      try {
+        if (isEdit) {
+          await api.updateEvent(eventId, payload);
+        } else {
+          await api.createEvent(payload);
+        }
+        window.location.href = 'events.html';
+      } catch (err) {
+        showError('Save failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = isEdit ? 'Save Changes' : 'Create Event';
+      }
+    });
+
+    (async () => {
+      await loadDropdowns();
+      if (isEdit) await loadEvent();
+    })();
+  </script>
+</body>
+</html>
