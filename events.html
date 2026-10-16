@@ -103,7 +103,9 @@
         tbody.innerHTML = `<tr><td colspan="8" class="center muted">No events match your filters.</td></tr>`;
         return;
       }
-      tbody.innerHTML = events.map(ev => `
+      tbody.innerHTML = events.map(ev => {
+        const canBook = user.role === 'customer' && ev.status === 'upcoming' && ev.available_tickets > 0;
+        return `
         <tr>
           <td>#${ev.event_id}</td>
           <td><strong>${ev.event_name}</strong><br><span class="muted">${(ev.description || '').substring(0, 60)}${ev.description && ev.description.length > 60 ? '...' : ''}</span></td>
@@ -114,13 +116,15 @@
           <td><span class="badge ${ev.status}">${ev.status}</span></td>
           <td>
             <button class="btn-sm" style="background:var(--accent)" onclick="viewWeather(${ev.event_id})">Weather</button>
+            ${canBook ? `<button class="btn-sm btn-success" onclick="bookEvent(${ev.event_id}, '${ev.event_name.replace(/'/g, "\\'")}', ${ev.ticket_price}, ${ev.available_tickets})">Book</button>` : ''}
             ${canManage ? `
               <button class="btn-sm" onclick="editEvent(${ev.event_id})">Edit</button>
               <button class="btn-sm btn-danger" onclick="cancelEvent(${ev.event_id})">Cancel</button>
             ` : ''}
           </td>
         </tr>
-      `).join('');
+      `;
+      }).join('');
     }
 
     function editEvent(id) {
@@ -128,13 +132,48 @@
     }
 
     async function cancelEvent(id) {
-      if (!confirm('Are you sure you want to cancel this event?')) return;
+      if (!confirm('Cancel event #' + id + '?\n\nClick OK to confirm cancellation.')) return;
       try {
         await api.deleteEvent(id);
         alert('Event cancelled successfully.');
         loadEvents();
       } catch (err) {
         alert('Failed to cancel: ' + err.message);
+      }
+    }
+
+    async function bookEvent(id, name, price, available) {
+      const input = prompt(
+        `Book tickets for: ${name}\n\n` +
+        `Price: RM ${Number(price).toFixed(2)} per ticket\n` +
+        `Available: ${available} tickets\n\n` +
+        `Enter the number of tickets (1-${available}):`
+      );
+      if (input === null) return;
+
+      const quantity = parseInt(input);
+      if (isNaN(quantity) || quantity < 1) {
+        alert('Invalid quantity. Please enter a number of at least 1.');
+        return;
+      }
+      if (quantity > available) {
+        alert(`Only ${available} tickets available.`);
+        return;
+      }
+
+      const confirmed = confirm(
+        `Confirm booking?\n\n` +
+        `${quantity} ticket(s) for ${name}\n` +
+        `Total: RM ${(quantity * price).toFixed(2)}`
+      );
+      if (!confirmed) return;
+
+      try {
+        await api.createBooking({ event_id: id, quantity: quantity });
+        alert('Booking created successfully!\n\nYou can view it on the Bookings page.');
+        loadEvents();
+      } catch (err) {
+        alert('Booking failed: ' + err.message);
       }
     }
 
